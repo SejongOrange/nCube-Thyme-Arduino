@@ -18,6 +18,12 @@ THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED WAR
 #include "m0_ota.h"
 
 const int ledPin = 13; // LED pin for connectivity status indicator
+const int infra1 = 5;
+const int infra2 = 6; // 적외선센서 5,6번에 연결
+const int vib = 9; // 진동센서 9번에 연결  
+const int echo = 10; 
+const int trig = 11; //초음파센서 10,11번에 연결  
+const int buz = 12; //부저 12번에 연결
 
 uint8_t USE_WIFI = 1;
 
@@ -110,199 +116,255 @@ unsigned long system_watchdog = 0;
 // User Define
 // Period of Sensor Data, can make more
 const unsigned long base_generate_interval = 10 * 1000;
-unsigned long temp_generate_previousMillis = 0;
-unsigned long temp_generate_interval = base_generate_interval;
-unsigned long tvoc_generate_previousMillis = 0;
-unsigned long tvoc_generate_interval = base_generate_interval;
-unsigned long co2_generate_previousMillis = 0;
-unsigned long co2_generate_interval = base_generate_interval;
+// unsigned long temp_generate_previousMillis = 0;
+// unsigned long temp_generate_interval = base_generate_interval;
+// unsigned long tvoc_generate_previousMillis = 0;
+// unsigned long tvoc_generate_interval = base_generate_interval;
+// unsigned long co2_generate_previousMillis = 0;
+// unsigned long co2_generate_interval = base_generate_interval;
+unsigned long vib_generate_previousMillis = 0;
+unsigned long vib_generate_interval = base_generate_interval;
+unsigned long ultra_generate_previousMillis = 0;
+unsigned long ultra_generate_interval = base_generate_interval;
+unsigned long infra1_generate_previousMillis = 0;
+unsigned long infra1_generate_interval = base_generate_interval;
+unsigned long infra2_generate_previousMillis = 0;
+unsigned long infra2_generate_interval = base_generate_interval;
+// unsigned long buz_generate_previousMillis = 0;
+// unsigned long buz_generate_interval = base_generate_interval;
 
 // Information of CSE as Mobius with MQTT
 const String FIRMWARE_VERSION = "1.0.0.0";
-String AE_NAME = "air1";
+String AE_NAME = "save_alert";
 String AE_ID = "S" + AE_NAME;
 const String CSE_ID = "/Mobius2";
 const String CB_NAME = "Mobius";
-const char* MOBIUS_MQTT_BROKER_IP = "203.253.128.161";
+const char* MOBIUS_MQTT_BROKER_IP = "169.254.207.126"; // 내 서버 주소임
 const uint16_t MOBIUS_MQTT_BROKER_PORT = 1883;
 
 OneM2MClient nCube;
 
-// add TAS(Thing Adaptation Layer) for Sensor
-#include "TasLED.h"
-TasLED tasLed;
+// // add TAS(Thing Adaptation Layer) for Sensor
+// #include "TasLED.h"
+// TasLED tasLed;
 
-#include "TasCCS811.h"
-TasCCS811 TasCCSSensor;
+// #include "TasCCS811.h"
+// TasCCS811 TasCCSSensor;
 
 
 // build tree of resource of oneM2M
 void buildResource() {
     nCube.configResource(2, "/"+CB_NAME, AE_NAME);                    // AE resource
 
-    nCube.configResource(3, "/"+CB_NAME+"/"+AE_NAME, "update");          // Container resource
-    nCube.configResource(3, "/"+CB_NAME+"/"+AE_NAME, "co2");             // Container resource
-    nCube.configResource(3, "/"+CB_NAME+"/"+AE_NAME, "led");             // Container resource
-    nCube.configResource(3, "/"+CB_NAME+"/"+AE_NAME, "temp");            // Container resource
-    nCube.configResource(3, "/"+CB_NAME+"/"+AE_NAME, "tvoc");            // Container resource
-
-    nCube.configResource(23, "/"+CB_NAME+"/"+AE_NAME+"/update", "sub");  // Subscription resource
-    nCube.configResource(23, "/"+CB_NAME+"/"+AE_NAME+"/led", "sub");     // Subscription resource
+    // nCube.configResource(3, "/"+CB_NAME+"/"+AE_NAME, "update");          // Container resource
+    // nCube.configResource(3, "/"+CB_NAME+"/"+AE_NAME, "co2");             // Container resource
+    // nCube.configResource(3, "/"+CB_NAME+"/"+AE_NAME, "led");             // Container resource
+    // nCube.configResource(3, "/"+CB_NAME+"/"+AE_NAME, "temp");            // Container resource
+    // nCube.configResource(3, "/"+CB_NAME+"/"+AE_NAME, "tvoc");            // Container resource
+    nCube.configResource(3, "/"+CB_NAME+"/"+AE_NAME, "vib");            // Container resource
+    nCube.configResource(3, "/"+CB_NAME+"/"+AE_NAME, "ultra");            // Container resource
+    nCube.configResource(3, "/"+CB_NAME+"/"+AE_NAME, "infra1");            // Container resource
+    nCube.configResource(3, "/"+CB_NAME+"/"+AE_NAME, "infra2");            // Container resource
+    nCube.configResource(3, "/"+CB_NAME+"/"+AE_NAME, "buz");            // Container resource
+       
+    // nCube.configResource(23, "/"+CB_NAME+"/"+AE_NAME+"/update", "sub");  // Subscription resource
+    // nCube.configResource(23, "/"+CB_NAME+"/"+AE_NAME+"/led", "sub");     // Subscription resource
+    nCube.configResource(23, "/"+CB_NAME+"/"+AE_NAME+"/buz", "sub");     // Subscription resource
 }
 
 // Period of generating sensor data
-void co2GenProcess() {
+
+void VibrGenProcess(){
     unsigned long currentMillis = millis();
-    if (currentMillis - co2_generate_previousMillis >= co2_generate_interval) {
-        co2_generate_previousMillis = currentMillis;
-        co2_generate_interval = base_generate_interval + (random(1000));
+    if (currentMillis - vib_generate_previousMillis >= vib_generate_interval) {
+        vib_generate_previousMillis = currentMillis;
+        vib_generate_interval = base_generate_interval + (random(1000));
         if (state == "create_cin") {
-            String cnt = "co2";
+            String cnt = "vib";
             String con = "\"?\"";
-            if(TasCCSSensor.available()) {
-                if(!TasCCSSensor.readData()) {
-                    con = String(TasCCSSensor.geteCO2()/10);
-                    con = "\"" + con + "\"";
+            long measurement = pulseIn(vib, HIGH);
+            con = String(measurement);
+            con = "\"" + con + "\"";
 
-                    char rqi[10];
-                    rand_str(rqi, 8);
-                    upload_q.ref[upload_q.push_idx] = "/"+CB_NAME+"/"+AE_NAME+"/"+cnt;
-                    upload_q.con[upload_q.push_idx] = con;
-                    upload_q.rqi[upload_q.push_idx] = String(rqi);
-                    upload_q.push_idx++;
-                    if(upload_q.push_idx >= QUEUE_SIZE) {
-                        upload_q.push_idx = 0;
-                    }
-                    if(upload_q.push_idx == upload_q.pop_idx) {
-                        upload_q.pop_idx++;
-                        if(upload_q.pop_idx >= QUEUE_SIZE) {
-                            upload_q.pop_idx = 0;
-                        }
-                    }
-
-                    Serial.println("pop : " + String(upload_q.pop_idx));
-                    Serial.println("push : " + String(upload_q.push_idx));
-                }
-                else {
-                    Serial.println("CCS811 co2 ERROR!");
+            char rqi[10];
+            rand_str(rqi, 8);
+            upload_q.ref[upload_q.push_idx] = "/"+CB_NAME+"/"+AE_NAME+"/"+cnt;
+            upload_q.con[upload_q.push_idx] = con;
+            upload_q.rqi[upload_q.push_idx] = String(rqi);
+            upload_q.push_idx++;
+            if(upload_q.push_idx >= QUEUE_SIZE) {
+                upload_q.push_idx = 0;
+            }
+            if(upload_q.push_idx == upload_q.pop_idx) {
+                upload_q.pop_idx++;
+                if(upload_q.pop_idx >= QUEUE_SIZE) {
+                    upload_q.pop_idx = 0;
                 }
             }
+
+            // Serial.println("pop : " + String(upload_q.pop_idx));
+            // Serial.println("push : " + String(upload_q.push_idx));
+            Serial.print("shock size = ");
+            Serial.println(measurement);
         }
     }
 }
 
-void tempGenProcess() {
+void UltraGenProcess() {
     unsigned long currentMillis = millis();
-    if (currentMillis - temp_generate_previousMillis >= temp_generate_interval) {
-        temp_generate_previousMillis = currentMillis;
-        temp_generate_interval = base_generate_interval + (random(1000));
+    if (currentMillis - ultra_generate_previousMillis >= ultra_generate_interval) {
+        ultra_generate_previousMillis = currentMillis;
+        ultra_generate_interval = base_generate_interval + (random(1000));
         if (state == "create_cin") {
             String cnt = "temp";
             String con = "\"?\"";
 
-            if(TasCCSSensor.available()) {
-                float temp = TasCCSSensor.calculateTemperature();
-                con = String(temp);
-                con = "\"" + con + "\"";
+            digitalWrite(trig, HIGH);
+            delayMicroseconds(10);
+            digitalWrite(trig, LOW);
+            float dist = pulseIn(echo, HIGH) * 17 / 1000;
+            con = String(dist);
+            con = "\"" + con + "\"";
 
-                char rqi[10];
-                rand_str(rqi, 8);
-                upload_q.ref[upload_q.push_idx] = "/"+CB_NAME+"/"+AE_NAME+"/"+cnt;
-                upload_q.con[upload_q.push_idx] = con;
-                upload_q.rqi[upload_q.push_idx] = String(rqi);
-                upload_q.push_idx++;
-                if(upload_q.push_idx >= QUEUE_SIZE) {
-                    upload_q.push_idx = 0;
-                }
-                if(upload_q.push_idx == upload_q.pop_idx) {
-                    upload_q.pop_idx++;
-                    if(upload_q.pop_idx >= QUEUE_SIZE) {
-                        upload_q.pop_idx = 0;
-                    }
-                }
-
-                Serial.println("pop : " + String(upload_q.pop_idx));
-                Serial.println("push : " + String(upload_q.push_idx));
+            char rqi[10];
+            rand_str(rqi, 8);
+            upload_q.ref[upload_q.push_idx] = "/"+CB_NAME+"/"+AE_NAME+"/"+cnt;
+            upload_q.con[upload_q.push_idx] = con;
+            upload_q.rqi[upload_q.push_idx] = String(rqi);
+            upload_q.push_idx++;
+            if(upload_q.push_idx >= QUEUE_SIZE) {
+                upload_q.push_idx = 0;
             }
+            if(upload_q.push_idx == upload_q.pop_idx) {
+                upload_q.pop_idx++;
+                if(upload_q.pop_idx >= QUEUE_SIZE) {
+                    upload_q.pop_idx = 0;
+                }
+            }
+
+            // Serial.println("pop : " + String(upload_q.pop_idx));
+            // Serial.println("push : " + String(upload_q.push_idx));
+            Serial.print("distance1 = "); // 초음파
+            Serial.print(dist);
+            Serial.println("cm");
         }
     }
 }
 
-void tvocGenProcess() {
+void Infra1GenProcess() {
     unsigned long currentMillis = millis();
-    if (currentMillis - tvoc_generate_previousMillis >= tvoc_generate_interval) {
-        tvoc_generate_previousMillis = currentMillis;
-        tvoc_generate_interval = base_generate_interval + (random(1000));
+    if (currentMillis - infra1_generate_previousMillis >= infra1_generate_interval) {
+        infra1_generate_previousMillis = currentMillis;
+        infra1_generate_interval = base_generate_interval + (random(1000));
         if (state == "create_cin") {
-            String cnt = "tvoc";
+            String cnt = "temp";
             String con = "\"?\"";
 
-            if(TasCCSSensor.available()) {
-                if(!TasCCSSensor.readData()) {
-                    con = String(TasCCSSensor.getTVOC()/10);
-                    con = "\"" + con + "\"";
+            float dist = digitalRead(infra1); // 적외선 센서1 감지되면 1, 감지 안되면 0
+            con = String(dist);
+            con = "\"" + con + "\"";
 
-                    char rqi[10];
-                    rand_str(rqi, 8);
-                    upload_q.ref[upload_q.push_idx] = "/"+CB_NAME+"/"+AE_NAME+"/"+cnt;
-                    upload_q.con[upload_q.push_idx] = con;
-                    upload_q.rqi[upload_q.push_idx] = String(rqi);
-                    upload_q.push_idx++;
-                    if(upload_q.push_idx >= QUEUE_SIZE) {
-                        upload_q.push_idx = 0;
-                    }
-                    if(upload_q.push_idx == upload_q.pop_idx) {
-                        upload_q.pop_idx++;
-                        if(upload_q.pop_idx >= QUEUE_SIZE) {
-                            upload_q.pop_idx = 0;
-                        }
-                    }
-
-                    Serial.println("pop : " + String(upload_q.pop_idx));
-                    Serial.println("push : " + String(upload_q.push_idx));
-                }
-                else {
-                    Serial.println("CCS811 tvoc ERROR!");
+            char rqi[10];
+            rand_str(rqi, 8);
+            upload_q.ref[upload_q.push_idx] = "/"+CB_NAME+"/"+AE_NAME+"/"+cnt;
+            upload_q.con[upload_q.push_idx] = con;
+            upload_q.rqi[upload_q.push_idx] = String(rqi);
+            upload_q.push_idx++;
+            if(upload_q.push_idx >= QUEUE_SIZE) {
+                upload_q.push_idx = 0;
+            }
+            if(upload_q.push_idx == upload_q.pop_idx) {
+                upload_q.pop_idx++;
+                if(upload_q.pop_idx >= QUEUE_SIZE) {
+                    upload_q.pop_idx = 0;
                 }
             }
+
+            // Serial.println("pop : " + String(upload_q.pop_idx));
+            // Serial.println("push : " + String(upload_q.push_idx));
+            Serial.print("적외선1 distance = "); // 적외선1
+            Serial.print(dist);
+        }
+    }
+}
+
+void Infra2GenProcess() {
+    unsigned long currentMillis = millis();
+    if (currentMillis - infra2_generate_previousMillis >= infra2_generate_interval) {
+        infra2_generate_previousMillis = currentMillis;
+        infra2_generate_interval = base_generate_interval + (random(1000));
+        if (state == "create_cin") {
+            String cnt = "temp";
+            String con = "\"?\"";
+
+            float dist = digitalRead(infra2);
+            con = String(dist);
+            con = "\"" + con + "\"";
+
+            char rqi[10];
+            rand_str(rqi, 8);
+            upload_q.ref[upload_q.push_idx] = "/"+CB_NAME+"/"+AE_NAME+"/"+cnt;
+            upload_q.con[upload_q.push_idx] = con;
+            upload_q.rqi[upload_q.push_idx] = String(rqi);
+            upload_q.push_idx++;
+            if(upload_q.push_idx >= QUEUE_SIZE) {
+                upload_q.push_idx = 0;
+            }
+            if(upload_q.push_idx == upload_q.pop_idx) {
+                upload_q.pop_idx++;
+                if(upload_q.pop_idx >= QUEUE_SIZE) {
+                    upload_q.pop_idx = 0;
+                }
+            }
+
+            // Serial.println("pop : " + String(upload_q.pop_idx));
+            // Serial.println("push : " + String(upload_q.push_idx));
+            Serial.print("적외선2 distance = "); // 적외선1
+            Serial.print(dist);
         }
     }
 }
 
 // Process notification of Mobius for control
-void notiProcess() {
-    if(noti_q.pop_idx != noti_q.push_idx) {
-        Split(noti_q.ref[noti_q.pop_idx], '/');
-        if(strRef[strRef_length-1] == "led") {
-            tasLed.setLED(noti_q.con[noti_q.pop_idx]);
+// void notiProcess() {
+//     if(noti_q.pop_idx != noti_q.push_idx) {
+//         Split(noti_q.ref[noti_q.pop_idx], '/');
+//         if(strRef[strRef_length-1] == "led") {
+//             tasLed.setLED(noti_q.con[noti_q.pop_idx]);
 
-            String resp_body = "";
-            resp_body += "{\"rsc\":\"2000\",\"to\":\"\",\"fr\":\"" + nCube.getAeid() + "\",\"pc\":\"\",\"rqi\":\"" + noti_q.rqi[noti_q.pop_idx] + "\"}";
-            nCube.response(mqtt, resp_body);
+//             String resp_body = "";
+//             resp_body += "{\"rsc\":\"2000\",\"to\":\"\",\"fr\":\"" + nCube.getAeid() + "\",\"pc\":\"\",\"rqi\":\"" + noti_q.rqi[noti_q.pop_idx] + "\"}";
+//             nCube.response(mqtt, resp_body);
 
-            Serial.println("2000 ---->");
-        }
-        else if(strRef[strRef_length-1] == "update") {
-            if (noti_q.con[noti_q.pop_idx] == "active") {
-                OTAClient.start();   // active OTAClient upgrad process
+//             Serial.println("2000 ---->");
+//         }
+//         else if(strRef[strRef_length-1] == "update") {
+//             if (noti_q.con[noti_q.pop_idx] == "active") {
+//                 OTAClient.start();   // active OTAClient upgrad process
 
-                String resp_body = "";
-                resp_body += "{\"rsc\":\"2000\",\"to\":\"\",\"fr\":\"" + nCube.getAeid() + "\",\"pc\":\"\",\"rqi\":\"" + noti_q.rqi[noti_q.pop_idx] + "\"}";
-                nCube.response(mqtt, resp_body);
-            }
-        }
+//                 String resp_body = "";
+//                 resp_body += "{\"rsc\":\"2000\",\"to\":\"\",\"fr\":\"" + nCube.getAeid() + "\",\"pc\":\"\",\"rqi\":\"" + noti_q.rqi[noti_q.pop_idx] + "\"}";
+//                 nCube.response(mqtt, resp_body);
+//             }
+//         }
 
-        noti_q.pop_idx++;
-        if(noti_q.pop_idx >= QUEUE_SIZE) {
-            noti_q.pop_idx = 0;
-        }
-    }
-}
+//         noti_q.pop_idx++;
+//         if(noti_q.pop_idx >= QUEUE_SIZE) {
+//             noti_q.pop_idx = 0;
+//         }
+//     }
+// }
 //------------------------------------------------------------------------------
 
 void setup() {
-    // configure the LED pin for output mode
+    // // configure the LED pin for output mode
     pinMode(ledPin, OUTPUT);
+    pinMode(infra1, INPUT);
+    pinMode(infra2, INPUT);
+    pinMode(vib,INPUT); 
+    pinMode(echo, INPUT);
+    pinMode(trig, OUTPUT);
+    pinMode(buz,OUTPUT);
 
     //Initialize serial:
     Serial.begin(9600);
@@ -326,27 +388,31 @@ void setup() {
     delay(500);
 
     // User Defined setup -------------------------------------------------------
-    tasLed.init();
+    // tasLed.init();
 
-    if(!TasCCSSensor.begin()) {
-        Serial.println("Failed to start CCS811 sensor! Please check your wiring.");
-        while(1) {
-            delay(100);
-            tasLed.setLED(String(random(1, 8)));
-        }
-    }
+    // if(!TasCCSSensor.begin()) {
+    //     Serial.println("Failed to start CCS811 sensor! Please check your wiring.");
+    //     while(1) {
+    //         delay(100);
+    //         tasLed.setLED(String(random(1, 8)));
+    //     }
+    // }
 
     //calibrate temperature sensor
-    while(!TasCCSSensor.available());
-    float temp = TasCCSSensor.calculateTemperature();
-    TasCCSSensor.setTempOffset(temp - 25.0);
+    // while(!TasCCSSensor.available());
+    // float temp = TasCCSSensor.calculateTemperature();
+    // TasCCSSensor.setTempOffset(temp - 25.0);
 
-    co2_generate_interval = base_generate_interval + (random(10)*1000);
-    tvoc_generate_interval = base_generate_interval + (random(10)*1000);
-    temp_generate_interval = base_generate_interval + (random(10)*1000);
+    // co2_generate_interval = base_generate_interval + (random(10)*1000);
+    // tvoc_generate_interval = base_generate_interval + (random(10)*1000);
+    // temp_generate_interval = base_generate_interval + (random(10)*1000);
+    vib_generate_interval = base_generate_interval + (random(10)*1000);
+    ultra_generate_interval = base_generate_interval + (random(10)*1000);
+    infra1_generate_interval = base_generate_interval + (random(10)*1000);
+    infra2_generate_interval = base_generate_interval + (random(10)*1000);
 
-    delay(500);
-    tasLed.setLED("0");
+    // delay(500);
+    // tasLed.setLED("0");
     //--------------------------------------------------------------------------
 
     delay(500);
@@ -375,10 +441,15 @@ void loop() {
     nCube_loop();
 
     // user defined loop
-    notiProcess();
-    co2GenProcess();
-    tempGenProcess();
-    tvocGenProcess();
+    // notiProcess();
+    // co2GenProcess();
+    // tempGenProcess();
+    // tvocGenProcess();
+    VibrGenProcess();
+    UltraGenProcess();
+    Infra1GenProcess();
+    Infra2GenProcess();
+
 }
 
 //------------------------------------------------------------------------------
